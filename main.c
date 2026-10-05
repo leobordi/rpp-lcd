@@ -5,19 +5,34 @@
 #include "hardware/i2c.h"
 
 #define I2C_ADDR 0x27
+#define BACKLIGHT_PIN 0x8
+#define ENABLE_PIN 0x4
 
-void lcd_write(i2c_inst_t *i2c, uint8_t value) {
-    uint8_t msb = value >> 4;
-    uint8_t lsb = value & 0xF0;
-
-    i2c_write_blocking(i2c, I2C_ADDR, msb, 1, false); 
-    i2c_write_blocking(i2c, I2C_ADDR, lsb, 1, false); 
+void lcd_toggle_e(i2c_inst_t *i2c, uint8_t value) {
+    sleep_us(600);
+    i2c_write_byte(value | ENABLE_PIN);
+    sleep_us(600);
+    i2c_write_byte(value & ~ENABLE_PIN);
+    sleep_us(600);
 }
 
+void lcd_write(i2c_inst_t *i2c, uint8_t value, int mode) {
+    uint8_t hi = mode | (value & 0xF0) | BACKLIGHT;
+    uint8_t lo = mode | ((value << 4) & 0xF0) | BACKLIGHT;
+
+    i2c_write_blocking(i2c, I2C_ADDR, hi, 1, false); 
+    lcd_toggle_e(i2c, hi);
+    i2c_write_blocking(i2c, I2C_ADDR, lo, 1, false); 
+    lcd_toggle_e(i2c, lo);
+} 
+
 void lcd_init(i2c_inst_t *i2c) {
-    lcd_write(i2c, 0x3);
-    lcd_write(i2c, 0x3);
-    lcd_write(i2c, 0x3);
+    lcd_write(i2c, 0x3, 0);
+    lcd_write(i2c, 0x3, 0);
+    lcd_write(i2c, 0x3, 0);
+    lcd_write(i2c, 0x2, 0);     // set modalità 4 bit
+    lcd_write(i2c, 0x8, 0);
+
 }
 
 int main() {
