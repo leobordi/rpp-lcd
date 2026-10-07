@@ -1,56 +1,127 @@
 #include <stdio.h>
-#include <stdbool.h>
+#include <string.h>
 #include "pico/stdlib.h"
-#include "pico/binary_info.h"
 #include "hardware/i2c.h"
+#include "pico/binary_info.h"
 
-#define I2C_ADDR 0x27
-#define BACKLIGHT_PIN 0x8
-#define ENABLE_PIN 0x4
+// Commands
+#define LCD_CLEARDISPLAY 0x01
+#define LCD_RETURNHOME 0x02
+#define LCD_ENTRYMODESET 0x04
+#define LCD_DISPLAYCONTROL 0x08
+#define LCD_CURSORSHIFT 0x10
+#define LCD_FUNCTIONSET 0x20
+#define LCD_SETCGRAMADDR 0x40
+#define LCD_SETDDRAMADDR 0x80
 
-void lcd_toggle_e(i2c_inst_t *i2c, uint8_t value) {
+// Display entry mode
+#define LCD_ENTRYSHIFTINCREMENT 0x01
+#define LCD_ENTRYLEFT 0x02
+
+// Display and cursor control
+#define LCD_BLINKON 0x01
+#define LCD_CURSORON 0x02
+#define LCD_DISPLAYON 0x04
+
+// Display and cursor shift
+#define LCD_MOVERIGHT 0x04
+#define LCD_DISPLAYMOVE 0x08
+
+// Function set
+#define LCD_5x10DOTS 0x04
+#define LCD_2LINE 0x08
+#define LCD_8BITMODE 0x10
+
+#define LCD_BACKLIGHT 0x08
+
+#define LCD_ENABLE_BIT 0x04
+
+// Di default l'indirizzo nel bus i2c per questo lcd è 0x27 
+#define LCD_I2C_ADDR 0x27
+
+// Modalità di invio dei byte 
+#define LCD_CHARACTER  1
+#define LCD_COMMAND    0
+
+#define MAX_LINES      2
+#define MAX_CHARS      16
+
+void i2c_write_byte(uint8_t val) {
+    i2c_write_blocking(i2c_default, LCD_I2C_ADDR, &val, 1, false);
+}
+
+void lcd_toggle_enable(uint8_t val) {
     sleep_us(600);
-    i2c_write_byte(value | ENABLE_PIN);
+    i2c_write_byte(val | LCD_ENABLE_BIT);
     sleep_us(600);
-    i2c_write_byte(value & ~ENABLE_PIN);
+    i2c_write_byte(val & ~LCD_ENABLE_BIT);
     sleep_us(600);
 }
 
-void lcd_write(i2c_inst_t *i2c, uint8_t value, int mode) {
-    uint8_t hi = mode | (value & 0xF0) | BACKLIGHT;
-    uint8_t lo = mode | ((value << 4) & 0xF0) | BACKLIGHT;
+void lcd_send_byte(uint8_t val, int mode) {
+    uint8_t high = mode | (val & 0xF0) | LCD_BACKLIGHT;
+    uint8_t low = mode | ((val << 4) & 0xF0) | LCD_BACKLIGHT;
 
-    i2c_write_blocking(i2c, I2C_ADDR, hi, 1, false); 
-    lcd_toggle_e(i2c, hi);
-    i2c_write_blocking(i2c, I2C_ADDR, lo, 1, false); 
-    lcd_toggle_e(i2c, lo);
-} 
-
-void lcd_init(i2c_inst_t *i2c) {
-    lcd_write(i2c, 0x3, 0);
-    lcd_write(i2c, 0x3, 0);
-    lcd_write(i2c, 0x3, 0);
-    lcd_write(i2c, 0x2, 0);     // set modalità 4 bit
-    lcd_write(i2c, 0x8, 0);
-
+    i2c_write_byte(high);
+    lcd_toggle_enable(high);
+    i2c_write_byte(low);
+    lcd_toggle_enable(low);
 }
 
-int main() {
-    // inizializzo il modulo i2c0 (master di default) settando il baudrate a 100kHz
+void lcd_clear(void) {
+    lcd_send_byte(LCD_CLEARDISPLAY, LCD_COMMAND);
+}
+
+void lcd_set_cursor(int line, int position) {
+    int val = (line == 0) ? 0x80 + position : 0xC0 + position;
+    lcd_send_byte(val, LCD_COMMAND);
+}
+
+static inline void lcd_char(char val) {
+    lcd_send_byte(val, LCD_CHARACTER);
+}
+
+void lcd_string(const char *s) {
+    while (*s) {
+        lcd_char(*s++);
+    }
+}
+
+/**
+ * Invia la sequenza di reset al display e poi lo configura per la scrittura di testo
+*/
+void lcd_init() {
+	/* Sequenza di reset del display */
+    lcd_send_byte(0x03, LCD_COMMAND);
+    lcd_send_byte(0x03, LCD_COMMAND);
+    lcd_send_byte(0x03, LCD_COMMAND);
+	/* Passaggio alla modalità 4 bit */
+    lcd_send_byte(0x02, LCD_COMMAND);
+
+	/* Testo da sx */
+    lcd_send_byte(LCD_ENTRYMODESET | LCD_ENTRYLEFT, LCD_COMMAND);
+	/* Modalità 2 righe*/
+    lcd_send_byte(LCD_FUNCTIONSET | LCD_2LINE, LCD_COMMAND);
+	/* Display acceso */
+    lcd_send_byte(LCD_DISPLAYCONTROL | LCD_DISPLAYON, LCD_COMMAND);
+	
+    lcd_clear();
+}
+
+int main(void) {
     i2c_init(i2c_default, 100 * 1000);
-    
-    // setto la funzione i2c nei pin sda e sdl
     gpio_set_function(PICO_DEFAULT_I2C_SDA_PIN, GPIO_FUNC_I2C);
     gpio_set_function(PICO_DEFAULT_I2C_SCL_PIN, GPIO_FUNC_I2C);
     gpio_pull_up(PICO_DEFAULT_I2C_SDA_PIN);
     gpio_pull_up(PICO_DEFAULT_I2C_SCL_PIN);
 
-    char messaggio[] = "Hello world!";
+    lcd_init();
 
-    // https://www.ti.com/lit/ds/symlink/pcf8574.pdf
+    lcd_clear();
+    lcd_set_cursor(0, 0);
 
-    lcd_init(i2c_default);
+    char msg[] = "Hello World!!!";
+    lcd_string(msg);
 
     return 0;
 }
-
