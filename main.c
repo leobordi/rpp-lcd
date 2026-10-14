@@ -13,7 +13,7 @@ int main() {
     
     lcd_init(&lcd);
 
-    lcd_print(&lcd, "Hello World!!!");
+    lcd_print(&lcd, "Hello\nWorld !!!");
 
     return 0;
 }

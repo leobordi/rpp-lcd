@@ -42,7 +42,7 @@
 #define MAX_LINES      2
 #define MAX_CHARS      16
 
-void lcd_toggle_enable(i2c_device *lcd, uint8_t val) {
+static void lcd_toggle_enable(i2c_device *lcd, uint8_t val) {
     uint8_t up = val | LCD_ENABLE_BIT;
     uint8_t down = val & ~LCD_ENABLE_BIT;
 
@@ -53,7 +53,7 @@ void lcd_toggle_enable(i2c_device *lcd, uint8_t val) {
     sleep_us(600);
 }
 
-void lcd_send_byte(i2c_device *lcd, uint8_t val, int mode) {
+static void lcd_send_byte(i2c_device *lcd, uint8_t val, int mode) {
     uint8_t hi = mode | (val & 0xF0) | LCD_BACKLIGHT;
     uint8_t lo = mode | ((val << 4) & 0xF0) | LCD_BACKLIGHT;
 
@@ -64,10 +64,19 @@ void lcd_send_byte(i2c_device *lcd, uint8_t val, int mode) {
 }
 
 void lcd_clear(i2c_device *lcd) {
+    lcd->cur_row = 0;
+    lcd->cur_col = 0;
+
+    for (int i = 0; i < LCD_ROWS; i++) {
+        for (int k = 0; k < LCD_COLS; k++) {
+            lcd->buffer[i][k] = ' ';
+        }
+    }
+
     lcd_send_byte(lcd, LCD_CLEARDISPLAY, LCD_COMMAND);
 }
 
-void lcd_set_cursor(i2c_device *lcd, int line, int position) {
+static void lcd_set_cursor(i2c_device *lcd, int line, int position) {
     int val = (line == 0) ? 0x80 + position : 0xC0 + position;
     lcd_send_byte(lcd, val, LCD_COMMAND);
 }
@@ -86,13 +95,49 @@ void lcd_init(i2c_device *lcd) {
     lcd_send_byte(lcd, LCD_FUNCTIONSET | LCD_2LINE, LCD_COMMAND);
 	/* Display acceso */
     lcd_send_byte(lcd, LCD_DISPLAYCONTROL | LCD_DISPLAYON, LCD_COMMAND);
-	
+
+    lcd->cur_row = 0;
+    lcd->cur_col = 0;
+
     lcd_clear(lcd);
     lcd_set_cursor(lcd, 0, 0);
 }
 
+static void lcd_clear_row(i2c_device *lcd, int row) {
+    lcd_set_cursor(lcd, row, 0);
+
+    for (int i = 0; i < LCD_COLS; i++)
+        lcd_send_byte(lcd, ' ', LCD_CHARACTER);
+}
+
 void lcd_print(i2c_device *lcd, char *text) {
     while (*text) {
-        lcd_send_byte(lcd, *text++, LCD_CHARACTER);
+        if (*text == '\n') {
+            *text++;
+            lcd->cur_row++;
+            lcd->cur_col = 0;
+        }
+
+        if (lcd->cur_col == LCD_COLS) {
+            lcd->cur_row++;
+            lcd->cur_col = 0;
+        }
+
+        if (lcd->cur_row >= LCD_ROWS || *text == '\0') break;
+
+        if (*text != '\n')
+            lcd->buffer[lcd->cur_row][lcd->cur_col++] = *text++;
+    }
+
+    for (int i = 0; i <= lcd->cur_row; i++) {
+        if ((i % 2) == 0) {
+            lcd_clear_row(lcd, 1);
+            lcd_set_cursor(lcd, 0, 0);
+        }
+        else lcd_set_cursor(lcd, 1, 0);
+
+        for (int k = 0; k < LCD_COLS; k++) {
+            lcd_send_byte(lcd, lcd->buffer[i][k], LCD_CHARACTER);       
+        }
     }
 }
