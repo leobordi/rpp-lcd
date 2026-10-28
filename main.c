@@ -13,7 +13,11 @@ int main() {
     
     lcd_init(&lcd);
 
-    lcd_print(&lcd, "Hello\nWorld !!!");
+    while (true) {
+        lcd_print(&lcd, "Hello\nWorld !!!");
+        sleep_ms(3000);
+        lcd_clear(&lcd);
+    }
 
     return 0;
 }
